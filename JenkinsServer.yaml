@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: 2010-09-09
+Parameters:
+  vpcid:
+    Type: String
+    Default: vpc-0ca990dee7eae45d3
+    Description: vpc where the jenkins server is deployed
+  subnetid:
+    Type: String
+    Default: subnet-0b10d7a3769835594
+    Description: subnet where the jenkins server is deployed
+
+Resources:
+  SecurityGroupJenkins:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupDescription: Allow SSH (TCP port 22) in
+      SecurityGroupEgress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow all outbound traffic by default
+          IpProtocol: '-1'
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          Description: Allow SSH Access
+          FromPort: 22
+          IpProtocol: tcp
+          ToPort: 22
+        - CidrIp: 0.0.0.0/0
+          Description: Allow 8080 Access
+          FromPort: 8080
+          IpProtocol: tcp
+          ToPort: 8080
+      VpcId: !Ref vpcid
+  ec2RoleJenkins:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Action: 'sts:AssumeRole'
+            Effect: Allow
+            Principal:
+              Service: !Join
+                - ''
+                - - ec2.
+                  - !Ref 'AWS::URLSuffix'
+        Version: 2012-10-17
+      ManagedPolicyArns:
+        - !Join
+          - ''
+          - - 'arn:'
+            - !Ref 'AWS::Partition'
+            - ':iam::aws:policy/AmazonSSMManagedInstanceCore'
+  InstanceInstanceProfileJenkins:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Roles:
+        - !Ref ec2RoleJenkins
+
+  JenkinsServer:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      AvailabilityZone: !Select
+        - 0
+        - !GetAZs ''
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 10
+      IamInstanceProfile: !Ref InstanceInstanceProfileJenkins
+      ImageId: ami-026b57f3c383c2eec
+      InstanceType: t2.micro
+      SecurityGroupIds:
+        - !GetAtt
+          - SecurityGroupJenkins
+          - GroupId
+      SubnetId: !Ref subnetid
+      Tags:
+        - Key: Name
+          Value: JenkinsServer
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash 
+          sudo yum install git -y
+    DependsOn:
+      - ec2RoleJenkins
+Outputs:
+  IPAddress:
+    Value: !GetAtt
+      - JenkinsServer
+      - PublicIp
